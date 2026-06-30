@@ -78,7 +78,16 @@ export function resolveSelectedFormat(formatId: string): SelectedFormat {
     return {
       args: [
         "-f",
-        `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${height}][ext=mp4]/best[height<=${height}]`,
+        [
+          `bestvideo[height<=${height}][ext=mp4][vcodec^=h264]+bestaudio[ext=m4a]`,
+          `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]`,
+          `best[height<=${height}][ext=mp4][vcodec^=h264]`,
+          `best[height<=${height}][ext=mp4]`,
+          `best[height<=${height}]`,
+          "best[ext=mp4][vcodec^=h264]",
+          "best[ext=mp4]",
+          "best",
+        ].join("/"),
         "--merge-output-format",
         "mp4",
       ],
@@ -136,21 +145,22 @@ function buildFrontendFormats(formats: YtDlpFormat[]): DownloadFormat[] {
   ).sort((a, b) => b - a);
 
   const preferredHeights = [1080, 720, 480, 360];
-  const videoFormats: DownloadFormat[] = preferredHeights
-    .filter((height) => heights.some((available) => available >= height))
-    .map((height) => {
-      const sizeBytes = estimateSizeForHeight(formats, height);
-      return {
-        id: `mp4-${height}p`,
-        kind: "video" as const,
-        container: "mp4" as const,
-        quality: `${height}p`,
-        label: `MP4 - ${height}p - Video + Audio`,
-        approxSizeMb: bytesToMb(sizeBytes),
-        hasAudio: true,
-        hasVideo: true,
-      };
-    });
+  const exactPreferredHeights = preferredHeights.filter((height) => heights.includes(height));
+  const displayHeights = exactPreferredHeights.length > 0 ? exactPreferredHeights : heights.slice(0, 4);
+
+  const videoFormats: DownloadFormat[] = displayHeights.map((height) => {
+    const sizeBytes = estimateSizeForHeight(formats, height);
+    return {
+      id: `mp4-${height}p`,
+      kind: "video" as const,
+      container: "mp4" as const,
+      quality: `${height}p`,
+      label: `MP4 - ${height}p - Video + Audio`,
+      approxSizeMb: bytesToMb(sizeBytes),
+      hasAudio: true,
+      hasVideo: true,
+    };
+  });
 
   const audioSize = formats
     .filter((format) => format.acodec && format.acodec !== "none" && (!format.vcodec || format.vcodec === "none"))
@@ -188,4 +198,3 @@ function bytesToMb(bytes: number) {
   if (!bytes || bytes < 0) return 0;
   return Math.round((bytes / 1024 / 1024) * 10) / 10;
 }
-

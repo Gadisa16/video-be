@@ -19,7 +19,7 @@ const createDownloadSchema = z.object({
 export const createDownload = asyncHandler(async (req, res) => {
   const { url, formatId, fileName } = createDownloadSchema.parse(req.body);
   assertAllowedDomain(url);
-  const selected = resolveSelectedFormat(formatId);
+  resolveSelectedFormat(formatId);
 
   if (jobStore.activeCount() >= env.MAX_CONCURRENT_JOBS) {
     throw new AppError("TOO_MANY_ACTIVE_JOBS", "Too many downloads are already running. Try again shortly.", 429);
@@ -39,7 +39,7 @@ export const createDownload = asyncHandler(async (req, res) => {
     downloadedMb: 0,
     startedAt: Date.now(),
     error: null,
-    fileName: `${safeBaseName}.${selected.outputExtension}`,
+    fileName: safeBaseName,
     filePath: null,
     jobDir: path.join(env.DOWNLOAD_DIR, id),
   });
@@ -108,3 +108,4 @@ function toStatusResponse(job: ReturnType<typeof jobStore.get> extends infer T ?
     downloadUrl: job.status === "completed" ? `/api/downloads/${job.id}/file` : null,
   };
 }
+
