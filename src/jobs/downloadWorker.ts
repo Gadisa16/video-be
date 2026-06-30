@@ -21,6 +21,7 @@ export async function processDownloadJob(jobId: string) {
     const outputTemplate = path.join(job.jobDir, `${job.id}.%(ext)s`);
     const args = [
       "--newline",
+      "--progress",
       "--no-playlist",
       "--no-warnings",
       "--restrict-filenames",
@@ -54,6 +55,7 @@ export async function processDownloadJob(jobId: string) {
     });
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
+      parseProgress(String(chunk), jobId);
     });
     child.on("error", (error) => {
       failJob(jobId, new AppError("INTERNAL_ERROR", `Unable to start yt-dlp: ${error.message}`, 500));
@@ -81,15 +83,16 @@ export async function processDownloadJob(jobId: string) {
         return;
       }
 
+      const roundedSizeMb = Math.round(sizeMb * 10) / 10;
       const extension = path.extname(filePath) || `.${selected.outputExtension}`;
       const fileName = `${sanitizeFileName(latest.fileName ?? "download")}${extension}`;
       jobStore.update(jobId, {
         status: "completed",
         progress: 100,
-        speedKbps: null,
-        etaSeconds: null,
-        totalSizeMb: Math.round(sizeMb * 10) / 10,
-        downloadedMb: Math.round(sizeMb * 10) / 10,
+        speedKbps: latest.speedKbps ?? calculateAverageSpeedKbps(sizeMb, latest.startedAt),
+        etaSeconds: 0,
+        totalSizeMb: roundedSizeMb,
+        downloadedMb: roundedSizeMb,
         filePath,
         fileName,
         process: undefined,
@@ -143,50 +146,92 @@ async function failJob(jobId: string, error: AppError) {
     timeout: undefined,
     finishedAt: Date.now(),
     error: error.message,
+    etaSeconds: null,
     filePath: null,
   });
 }
 
 function parseProgress(output: string, jobId: string) {
   for (const line of output.split(/\r?\n/)) {
+    if (!line.includes("[download]")) continue;
+
     const progressMatch = /\[download]\s+([\d.]+)%/.exec(line);
-    const totalMatch = /of\s+~?([\d.]+)(KiB|MiB|GiB)/i.exec(line);
-    const speedMatch = /at\s+([\d.]+)(KiB|MiB|GiB)\/s/i.exec(line);
-    const etaMatch = /ETA\s+(\d+:)?(\d{1,2}):(\d{2})/.exec(line);
+    const totalMatch = /of\s+~?([\d.]+)\s*([KMG]?i?B)/i.exec(line);
+    const downloadedMatch = /\[download]\s+([\d.]+)\s*([KMG]?i?B)\s+of/i.exec(line);
+    const speedMatch = /at\s+([\d.]+)\s*([KMG]?i?B)\/s/i.exec(line);
+    const etaMatch = /ETA\s+(?:(\d+):)?(\d{1,2}):(\d{2})/.exec(line);
 
-    const patch: Record<string, number | null> = {};
-    if (progressMatch) patch.progress = Number(progressMatch[1]);
-    if (totalMatch) patch.totalSizeMb = toMb(Number(totalMatch[1]), totalMatch[2]);
-    if (speedMatch) patch.speedKbps = toKbps(Number(speedMatch[1]), speedMatch[2]);
-    if (etaMatch) {
-      const hours = etaMatch[1] ? Number(etaMatch[1].replace(":", "")) : 0;
-      patch.etaSeconds = hours * 3600 + Number(etaMatch[2]) * 60 + Number(etaMatch[3]);
-    }
+    const current = jobStore.getInternal(jobId);
+    if (current?.status !== "processing") continue;
 
-    if (Object.keys(patch).length > 0) {
-      const current = jobStore.getInternal(jobId);
-      if (current?.status === "processing") {
-        const downloadedMb = patch.totalSizeMb && patch.progress
-          ? (Number(patch.totalSizeMb) * Number(patch.progress)) / 100
-          : current.downloadedMb;
-        jobStore.update(jobId, {
-          ...patch,
-          downloadedMb: Math.round(downloadedMb * 10) / 10,
-        });
-      }
-    }
+    const progress = progressMatch ? Number(progressMatch[1]) : current.progress;
+    const totalSizeMb = totalMatch ? toMb(Number(totalMatch[1]), totalMatch[2]) : current.totalSizeMb;
+    const downloadedMb = getDownloadedMb({
+      downloadedMatch,
+      totalSizeMb,
+      progress,
+      currentDownloadedMb: current.downloadedMb,
+    });
+    const parsedSpeedKbps = speedMatch ? toKbps(Number(speedMatch[1]), speedMatch[2]) : null;
+    const speedKbps = parsedSpeedKbps ?? calculateAverageSpeedKbps(downloadedMb, current.startedAt);
+    const etaSeconds = etaMatch
+      ? parseEtaSeconds(etaMatch)
+      : estimateEtaSeconds(totalSizeMb, downloadedMb, speedKbps);
+
+    jobStore.update(jobId, {
+      progress,
+      totalSizeMb: totalSizeMb ? Math.round(totalSizeMb * 10) / 10 : current.totalSizeMb,
+      downloadedMb: Math.round(downloadedMb * 10) / 10,
+      speedKbps,
+      etaSeconds,
+    });
   }
 }
 
+function getDownloadedMb({
+  downloadedMatch,
+  totalSizeMb,
+  progress,
+  currentDownloadedMb,
+}: {
+  downloadedMatch: RegExpExecArray | null;
+  totalSizeMb: number | null;
+  progress: number;
+  currentDownloadedMb: number;
+}) {
+  if (downloadedMatch) return toMb(Number(downloadedMatch[1]), downloadedMatch[2]);
+  if (totalSizeMb && progress > 0) return (totalSizeMb * progress) / 100;
+  return currentDownloadedMb;
+}
+
+function parseEtaSeconds(match: RegExpExecArray) {
+  const hours = match[1] ? Number(match[1]) : 0;
+  return hours * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+function estimateEtaSeconds(totalSizeMb: number | null, downloadedMb: number, speedKbps: number | null) {
+  if (!totalSizeMb || !speedKbps || speedKbps <= 0 || downloadedMb <= 0) return null;
+  const remainingMb = Math.max(totalSizeMb - downloadedMb, 0);
+  return Math.ceil((remainingMb * 1024) / speedKbps);
+}
+
+function calculateAverageSpeedKbps(downloadedMb: number, startedAt: number) {
+  const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 0.25);
+  if (downloadedMb <= 0) return null;
+  return Math.round((downloadedMb * 1024) / elapsedSeconds);
+}
+
 function toMb(value: number, unit: string) {
-  if (/kib/i.test(unit)) return value / 1024;
-  if (/gib/i.test(unit)) return value * 1024;
+  if (/^b$/i.test(unit)) return value / 1024 / 1024;
+  if (/^k/i.test(unit)) return value / 1024;
+  if (/^g/i.test(unit)) return value * 1024;
   return value;
 }
 
 function toKbps(value: number, unit: string) {
-  if (/kib/i.test(unit)) return value;
-  if (/mib/i.test(unit)) return value * 1024;
-  if (/gib/i.test(unit)) return value * 1024 * 1024;
+  if (/^b$/i.test(unit)) return value / 1024;
+  if (/^k/i.test(unit)) return value;
+  if (/^m/i.test(unit)) return value * 1024;
+  if (/^g/i.test(unit)) return value * 1024 * 1024;
   return value;
 }
