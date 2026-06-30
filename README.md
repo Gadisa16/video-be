@@ -28,7 +28,7 @@ Copy `.env.example` to `.env` and adjust values as needed:
 ```bash
 PORT=4000
 NODE_ENV=development
-FRONTEND_ORIGIN=http://localhost:5173
+FRONTEND_ORIGIN=http://localhost:5173,http://localhost:8080
 ALLOWED_DOMAINS=youtube.com,youtu.be,tiktok.com,instagram.com,facebook.com
 MAX_FILE_SIZE_MB=500
 MAX_DURATION_SECONDS=3600
@@ -77,3 +77,4 @@ Errors use:
 - History remains a frontend localStorage feature.
 - The current worker is designed so the in-memory store can later be replaced with Redis and BullMQ.
 - Only allowlisted public URLs are processed. Private, login-protected, restricted, DRM-protected, unavailable, or unsupported media is rejected.
+

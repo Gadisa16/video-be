@@ -11,7 +11,7 @@ const projectRoot = path.resolve(__dirname, "../..");
 const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  FRONTEND_ORIGIN: z.string().url().default("http://localhost:5173"),
+  FRONTEND_ORIGIN: z.string().default("http://localhost:5173,http://localhost:8080"),
   ALLOWED_DOMAINS: z.string().default("youtube.com,youtu.be,tiktok.com,instagram.com,facebook.com"),
   MAX_FILE_SIZE_MB: z.coerce.number().positive().default(500),
   MAX_DURATION_SECONDS: z.coerce.number().positive().default(3600),
@@ -29,6 +29,9 @@ export const env = {
   ...parsed,
   PROJECT_ROOT: projectRoot,
   DOWNLOAD_DIR: downloadDir,
+  FRONTEND_ORIGINS_LIST: parsed.FRONTEND_ORIGIN.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   ALLOWED_DOMAINS_LIST: parsed.ALLOWED_DOMAINS.split(",")
     .map((domain) => domain.trim().toLowerCase())
     .filter(Boolean),

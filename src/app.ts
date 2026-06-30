@@ -15,7 +15,18 @@ export function createApp() {
       redact: ["req.headers.authorization", "req.headers.cookie"],
     }),
   );
-  app.use(cors({ origin: env.FRONTEND_ORIGIN }));
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (!origin || env.FRONTEND_ORIGINS_LIST.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        callback(new Error("Not allowed by CORS"));
+      },
+    }),
+  );
   app.use(express.json({ limit: "64kb" }));
   app.use(
     rateLimit({
@@ -38,4 +49,3 @@ export function createApp() {
 
   return app;
 }
-
