@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: video-downloader-api
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DOWNLOAD_DIR
+        value: /tmp/video-downloads
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PRIVACY_HASH_SECRET
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ALLOWED_DOMAINS
+        value: youtube.com,youtu.be,tiktok.com,instagram.com,facebook.com
+      - key: MAX_FILE_SIZE_MB
+        value: 500
+      - key: MAX_DURATION_SECONDS
+        value: 3600
+      - key: JOB_TIMEOUT_MINUTES
+        value: 15
+      - key: MAX_CONCURRENT_JOBS
+        value: 2
+      - key: ANALYTICS_ENABLED
+        value: true
+      - key: GUEST_DOWNLOAD_LIMIT
+        value: 3
+      - key: ABUSE_PROTECTION_ENABLED
+        value: true
+      - key: ABUSE_MAX_ACCOUNTS_PER_DEVICE
+        value: 5
+      - key: ABUSE_MAX_DOWNLOADS_PER_DEVICE_DAY
+        value: 20
+      - key: ABUSE_MAX_DOWNLOADS_PER_IP_DAY
+        value: 50
+      - key: PUBLIC_RATE_LIMIT_PER_15_MIN
+        value: 100
+      - key: AUTH_RATE_LIMIT_PER_15_MIN
+        value: 20
+      - key: FEEDBACK_RATE_LIMIT_PER_15_MIN
+        value: 10
