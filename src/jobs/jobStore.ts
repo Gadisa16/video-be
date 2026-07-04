@@ -46,8 +46,16 @@ class InMemoryJobStore {
     delete (publicJob as Partial<StoredJob>).timeout;
     delete (publicJob as Partial<StoredJob>).jobDir;
     delete publicJob.filePath;
+    delete publicJob.userId;
+    delete publicJob.guestId;
+    delete publicJob.ipHash;
+    delete publicJob.userAgentHash;
+    delete publicJob.country;
+    delete publicJob.deviceType;
+    delete publicJob.browser;
     return publicJob;
   }
 }
 
 export const jobStore = new InMemoryJobStore();
+

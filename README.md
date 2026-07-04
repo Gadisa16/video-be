@@ -1,12 +1,13 @@
 # Video Downloader Backend
 
-TypeScript Express backend for permitted public media downloads. It validates URLs, rejects unsupported domains before invoking tools, retrieves metadata with `yt-dlp`, and runs asynchronous download jobs with temporary files.
+TypeScript Express backend for permitted public media downloads. It validates URLs, rejects unsupported domains before invoking tools, retrieves metadata with `yt-dlp`, and runs asynchronous download jobs with temporary files. The backend also owns privacy-safe auth/profile sync, guest limits, analytics, admin dashboard APIs, and feedback management.
 
 ## Prerequisites
 
 - Node.js 20 or newer
 - FFmpeg available on `PATH`
 - yt-dlp available on `PATH`
+- A Supabase project with Auth enabled. Enable Google provider and/or email confirmations as needed.
 
 Windows install options:
 
@@ -23,19 +24,33 @@ npm install
 
 ## Environment
 
-Copy `.env.example` to `.env` and adjust values as needed:
+Copy `.env.example` to `.env` and adjust values:
 
 ```bash
 PORT=4000
-NODE_ENV=development
 FRONTEND_ORIGIN=http://localhost:5173,http://localhost:8080
-ALLOWED_DOMAINS=youtube.com,youtu.be,tiktok.com,instagram.com,facebook.com
-MAX_FILE_SIZE_MB=500
-MAX_DURATION_SECONDS=3600
-JOB_TIMEOUT_MINUTES=15
-MAX_CONCURRENT_JOBS=2
-DOWNLOAD_DIR=./tmp
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+PRIVACY_HASH_SECRET=replace-with-a-long-random-secret
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=replace-with-a-strong-password
+GUEST_DOWNLOAD_LIMIT=3
 ```
+
+`SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, and `PRIVACY_HASH_SECRET` must never be exposed to the frontend.
+
+## Database
+
+Run the migration in `supabase/migrations/202606300001_auth_usage_analytics_feedback.sql` against Supabase. It creates:
+
+- `profiles`
+- `guest_usage`
+- `user_usage`
+- `download_logs`
+- `analytics_events`
+- `feedback`
+
+RLS is enabled. Browser users can read/update their own profile and insert feedback; server-side admin and analytics operations use the service role from this backend.
 
 ## Run
 
@@ -53,28 +68,28 @@ npm start
 ## Endpoints
 
 - `GET /health`
-- `POST /api/video-info` with `{ "url": "https://example.com/video" }`
-- `POST /api/downloads` with `{ "url": "...", "formatId": "mp4-720p" }`
+- `POST /api/auth/sync`
+- `PATCH /api/auth/profile`
+- `GET /api/me`
+- `POST /api/analytics/page-view`
+- `POST /api/feedback`
+- `POST /api/admin/login`
+- `GET /api/admin/dashboard`
+- `GET /api/admin/feedback`
+- `PATCH /api/admin/feedback/:id`
+- `DELETE /api/admin/feedback/:id`
+- `POST /api/video-info`
+- `POST /api/downloads`
 - `GET /api/downloads/:jobId`
 - `POST /api/downloads/:jobId/cancel`
 - `GET /api/downloads/:jobId/file`
 
-Errors use:
+## Privacy and abuse controls
 
-```json
-{
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable explanation"
-  }
-}
-```
-
-## MVP limitations
-
-- Jobs are stored in memory and disappear when the process restarts.
-- Concurrent processing is limited per process only.
-- History remains a frontend localStorage feature.
-- The current worker is designed so the in-memory store can later be replaced with Redis and BullMQ.
-- Only allowlisted public URLs are processed. Private, login-protected, restricted, DRM-protected, unavailable, or unsupported media is rejected.
+- Raw IP addresses and full video URLs are never stored.
+- IP and User-Agent values are HMAC-SHA256 hashed with `PRIVACY_HASH_SECRET`.
+- Video analytics store host and a URL fingerprint, not the original URL.
+- Guests are limited by completed downloads using `guest_id`, hashed IP, and hashed User-Agent.
+- Abuse thresholds are configurable through `ABUSE_*` environment variables.
+- Public, auth, and feedback endpoints are rate-limited.
 

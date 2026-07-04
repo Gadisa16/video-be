@@ -4,6 +4,8 @@ import { spawn } from "node:child_process";
 import { env } from "../config/env.js";
 import { jobStore } from "./jobStore.js";
 import { assertAllowedDomain } from "../services/domain.js";
+import { trackJobEvent } from "../services/analytics.js";
+import { recordDownloadTerminal } from "../services/usage.js";
 import { resolveSelectedFormat } from "../services/ytdlp.js";
 import { AppError, mapYtDlpError } from "../utils/errors.js";
 import { ensureDir, findFirstFile, removeDir } from "../utils/fs.js";
@@ -33,7 +35,7 @@ export async function processDownloadJob(jobId: string) {
 
     const child = spawn("yt-dlp", args, { windowsHide: true });
     const timeout = setTimeout(() => {
-      failJob(jobId, new AppError("TIMEOUT", "The download timed out before it could finish.", 408));
+      void failJob(jobId, new AppError("TIMEOUT", "The download timed out before it could finish.", 408));
       child.kill("SIGTERM");
     }, env.JOB_TIMEOUT_MINUTES * 60 * 1000);
 
@@ -50,15 +52,13 @@ export async function processDownloadJob(jobId: string) {
     let stderr = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      parseProgress(String(chunk), jobId);
-    });
+    child.stdout.on("data", (chunk) => parseProgress(String(chunk), jobId));
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
       parseProgress(String(chunk), jobId);
     });
     child.on("error", (error) => {
-      failJob(jobId, new AppError("INTERNAL_ERROR", `Unable to start yt-dlp: ${error.message}`, 500));
+      void failJob(jobId, new AppError("INTERNAL_ERROR", `Unable to start yt-dlp: ${error.message}`, 500));
     });
     child.on("close", async (code) => {
       clearTimeout(timeout);
@@ -99,14 +99,14 @@ export async function processDownloadJob(jobId: string) {
         timeout: undefined,
         finishedAt: Date.now(),
       });
+      const completedJob = jobStore.getInternal(jobId);
+      if (completedJob) {
+        await recordDownloadTerminal(completedJob);
+        await trackJobEvent(completedJob, "download_completed", { formatId: completedJob.formatId });
+      }
     });
   } catch (error) {
-    await failJob(
-      jobId,
-      error instanceof AppError
-        ? error
-        : new AppError("DOWNLOAD_FAILED", "The download could not be started.", 500),
-    );
+    await failJob(jobId, error instanceof AppError ? error : new AppError("DOWNLOAD_FAILED", "The download could not be started.", 500));
   }
 }
 
@@ -116,7 +116,7 @@ export async function cancelDownloadJob(jobId: string) {
   if (job.timeout) clearTimeout(job.timeout);
   if (job.process && !job.process.killed) job.process.kill("SIGTERM");
   await removeDir(job.jobDir);
-  return jobStore.update(jobId, {
+  jobStore.update(jobId, {
     status: "cancelled",
     process: undefined,
     timeout: undefined,
@@ -124,6 +124,12 @@ export async function cancelDownloadJob(jobId: string) {
     error: null,
     filePath: null,
   });
+  const cancelledJob = jobStore.getInternal(jobId);
+  if (cancelledJob) {
+    await recordDownloadTerminal(cancelledJob);
+    await trackJobEvent(cancelledJob, "download_cancelled", { formatId: cancelledJob.formatId });
+  }
+  return jobStore.get(jobId);
 }
 
 export async function cleanupJobFiles(jobId: string) {
@@ -149,15 +155,20 @@ async function failJob(jobId: string, error: AppError) {
     etaSeconds: null,
     filePath: null,
   });
+  const failedJob = jobStore.getInternal(jobId);
+  if (failedJob) {
+    await recordDownloadTerminal(failedJob);
+    await trackJobEvent(failedJob, "download_failed", { formatId: failedJob.formatId });
+  }
 }
 
 function parseProgress(output: string, jobId: string) {
   for (const line of output.split(/\r?\n/)) {
     if (!line.includes("[download]")) continue;
 
-    const progressMatch = /\[download]\s+([\d.]+)%/.exec(line);
+    const progressMatch = /\[download\]\s+([\d.]+)%/.exec(line);
     const totalMatch = /of\s+~?([\d.]+)\s*([KMG]?i?B)/i.exec(line);
-    const downloadedMatch = /\[download]\s+([\d.]+)\s*([KMG]?i?B)\s+of/i.exec(line);
+    const downloadedMatch = /\[download\]\s+([\d.]+)\s*([KMG]?i?B)\s+of/i.exec(line);
     const speedMatch = /at\s+([\d.]+)\s*([KMG]?i?B)\/s/i.exec(line);
     const etaMatch = /ETA\s+(?:(\d+):)?(\d{1,2}):(\d{2})/.exec(line);
 
@@ -166,17 +177,10 @@ function parseProgress(output: string, jobId: string) {
 
     const progress = progressMatch ? Number(progressMatch[1]) : current.progress;
     const totalSizeMb = totalMatch ? toMb(Number(totalMatch[1]), totalMatch[2]) : current.totalSizeMb;
-    const downloadedMb = getDownloadedMb({
-      downloadedMatch,
-      totalSizeMb,
-      progress,
-      currentDownloadedMb: current.downloadedMb,
-    });
+    const downloadedMb = getDownloadedMb({ downloadedMatch, totalSizeMb, progress, currentDownloadedMb: current.downloadedMb });
     const parsedSpeedKbps = speedMatch ? toKbps(Number(speedMatch[1]), speedMatch[2]) : null;
     const speedKbps = parsedSpeedKbps ?? calculateAverageSpeedKbps(downloadedMb, current.startedAt);
-    const etaSeconds = etaMatch
-      ? parseEtaSeconds(etaMatch)
-      : estimateEtaSeconds(totalSizeMb, downloadedMb, speedKbps);
+    const etaSeconds = etaMatch ? parseEtaSeconds(etaMatch) : estimateEtaSeconds(totalSizeMb, downloadedMb, speedKbps);
 
     jobStore.update(jobId, {
       progress,
@@ -188,17 +192,7 @@ function parseProgress(output: string, jobId: string) {
   }
 }
 
-function getDownloadedMb({
-  downloadedMatch,
-  totalSizeMb,
-  progress,
-  currentDownloadedMb,
-}: {
-  downloadedMatch: RegExpExecArray | null;
-  totalSizeMb: number | null;
-  progress: number;
-  currentDownloadedMb: number;
-}) {
+function getDownloadedMb({ downloadedMatch, totalSizeMb, progress, currentDownloadedMb }: { downloadedMatch: RegExpExecArray | null; totalSizeMb: number | null; progress: number; currentDownloadedMb: number }) {
   if (downloadedMatch) return toMb(Number(downloadedMatch[1]), downloadedMatch[2]);
   if (totalSizeMb && progress > 0) return (totalSizeMb * progress) / 100;
   return currentDownloadedMb;

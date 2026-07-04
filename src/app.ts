@@ -5,6 +5,7 @@ import { pinoHttp } from "pino-http";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { notFound } from "./middleware/notFound.js";
+import { attachRequestContext } from "./middleware/requestContext.js";
 import { router } from "./routes/index.js";
 
 export function createApp() {
@@ -31,7 +32,7 @@ export function createApp() {
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,
-      limit: 100,
+      limit: env.PUBLIC_RATE_LIMIT_PER_15_MIN,
       standardHeaders: true,
       legacyHeaders: false,
       message: {
@@ -42,6 +43,7 @@ export function createApp() {
       },
     }),
   );
+  app.use(attachRequestContext);
 
   app.use(router);
   app.use(notFound);

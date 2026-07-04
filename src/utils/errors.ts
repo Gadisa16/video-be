@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 
 export type ErrorCode =
   | "BAD_REQUEST"
+  | "UNAUTHENTICATED"
+  | "FORBIDDEN"
   | "UNSUPPORTED_DOMAIN"
   | "UNSUPPORTED_URL"
   | "PRIVATE_OR_RESTRICTED"
@@ -10,6 +12,9 @@ export type ErrorCode =
   | "TOO_LARGE"
   | "TOO_LONG"
   | "TOO_MANY_ACTIVE_JOBS"
+  | "GUEST_LIMIT_REACHED"
+  | "ABUSE_LIMITED"
+  | "DATABASE_UNAVAILABLE"
   | "JOB_NOT_FOUND"
   | "JOB_NOT_READY"
   | "JOB_CANCELLED"

@@ -49,4 +49,11 @@ export interface DownloadJob {
   error?: string | null;
   fileName?: string | null;
   filePath?: string | null;
+  userId?: string | null;
+  guestId?: string | null;
+  ipHash?: string | null;
+  userAgentHash?: string | null;
+  country?: string | null;
+  deviceType?: string | null;
+  browser?: string | null;
 }

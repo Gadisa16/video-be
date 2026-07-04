@@ -6,6 +6,8 @@ import { env } from "../config/env.js";
 import { jobStore } from "../jobs/jobStore.js";
 import { cancelDownloadJob, cleanupJobFiles, processDownloadJob } from "../jobs/downloadWorker.js";
 import { assertAllowedDomain } from "../services/domain.js";
+import { trackEvent } from "../services/analytics.js";
+import { assertDownloadAllowed, attachContextToJob, recordDownloadStarted } from "../services/usage.js";
 import { resolveSelectedFormat } from "../services/ytdlp.js";
 import { AppError, asyncHandler } from "../utils/errors.js";
 import { sanitizeFileName } from "../utils/filename.js";
@@ -20,6 +22,7 @@ export const createDownload = asyncHandler(async (req, res) => {
   const { url, formatId, fileName } = createDownloadSchema.parse(req.body);
   assertAllowedDomain(url);
   resolveSelectedFormat(formatId);
+  await assertDownloadAllowed(res);
 
   if (jobStore.activeCount() >= env.MAX_CONCURRENT_JOBS) {
     throw new AppError("TOO_MANY_ACTIVE_JOBS", "Too many downloads are already running. Try again shortly.", 429);
@@ -27,22 +30,31 @@ export const createDownload = asyncHandler(async (req, res) => {
 
   const id = randomUUID();
   const safeBaseName = sanitizeFileName(fileName ?? "download");
+  const internalJob = attachContextToJob(
+    {
+      id,
+      url,
+      formatId,
+      status: "queued",
+      progress: 0,
+      speedKbps: null,
+      etaSeconds: null,
+      totalSizeMb: null,
+      downloadedMb: 0,
+      startedAt: Date.now(),
+      error: null,
+      fileName: safeBaseName,
+      filePath: null,
+    },
+    res,
+  );
   const job = jobStore.create({
-    id,
-    url,
-    formatId,
-    status: "queued",
-    progress: 0,
-    speedKbps: null,
-    etaSeconds: null,
-    totalSizeMb: null,
-    downloadedMb: 0,
-    startedAt: Date.now(),
-    error: null,
-    fileName: safeBaseName,
-    filePath: null,
+    ...internalJob,
     jobDir: path.join(env.DOWNLOAD_DIR, id),
   });
+
+  await recordDownloadStarted(internalJob);
+  await trackEvent(req, res, "download_started", { videoUrl: url, metadata: { formatId } });
 
   setImmediate(() => {
     void processDownloadJob(id);
@@ -65,6 +77,7 @@ export const cancelDownload = asyncHandler(async (req, res) => {
   const jobId = String(req.params.jobId);
   const job = await cancelDownloadJob(jobId);
   if (!job) throw new AppError("JOB_NOT_FOUND", "Download job not found.", 404);
+  await trackEvent(req, res, "download_cancelled", { videoUrl: job.url });
   res.json(toStatusResponse(job));
 });
 
@@ -108,4 +121,3 @@ function toStatusResponse(job: ReturnType<typeof jobStore.get> extends infer T ?
     downloadUrl: job.status === "completed" ? `/api/downloads/${job.id}/file` : null,
   };
 }
-
