@@ -13,6 +13,13 @@ export const router = Router();
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: env.AUTH_RATE_LIMIT_PER_15_MIN, standardHeaders: true, legacyHeaders: false });
 const feedbackLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: env.FEEDBACK_RATE_LIMIT_PER_15_MIN, standardHeaders: true, legacyHeaders: false });
 
+router.get("/", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "video-downloader-api",
+    health: "/health",
+  });
+});
 router.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
@@ -33,4 +40,5 @@ router.post("/api/downloads", createDownload);
 router.get("/api/downloads/:jobId", getDownload);
 router.post("/api/downloads/:jobId/cancel", cancelDownload);
 router.get("/api/downloads/:jobId/file", downloadFile);
+
 
