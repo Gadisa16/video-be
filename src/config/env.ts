@@ -40,13 +40,22 @@ const downloadDir = path.isAbsolute(parsed.DOWNLOAD_DIR)
   ? parsed.DOWNLOAD_DIR
   : path.resolve(projectRoot, parsed.DOWNLOAD_DIR);
 
+function normalizeOrigin(origin: string) {
+  try {
+    return new URL(origin).origin;
+  } catch {
+    return origin.replace(/\/+$/, "");
+  }
+}
+
 export const env = {
   ...parsed,
   PROJECT_ROOT: projectRoot,
   DOWNLOAD_DIR: downloadDir,
   FRONTEND_ORIGINS_LIST: parsed.FRONTEND_ORIGIN.split(",")
     .map((origin) => origin.trim())
-    .filter(Boolean),
+    .filter(Boolean)
+    .map(normalizeOrigin),
   ALLOWED_DOMAINS_LIST: parsed.ALLOWED_DOMAINS.split(",")
     .map((domain) => domain.trim().toLowerCase())
     .filter(Boolean),
