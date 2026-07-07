@@ -7,7 +7,7 @@ import { assertAllowedDomain } from "../services/domain.js";
 import { trackJobEvent } from "../services/analytics.js";
 import { recordDownloadTerminal } from "../services/usage.js";
 import { resolveSelectedFormat } from "../services/ytdlp.js";
-import { AppError, mapYtDlpError } from "../utils/errors.js";
+import { AppError, mapYtDlpError, sanitizeYtDlpStderr } from "../utils/errors.js";
 import { ensureDir, findFirstFile, removeDir } from "../utils/fs.js";
 import { sanitizeFileName } from "../utils/filename.js";
 
@@ -66,7 +66,14 @@ export async function processDownloadJob(jobId: string) {
       if (!latest || latest.status === "cancelled" || latest.status === "failed") return;
 
       if (code !== 0) {
-        await failJob(jobId, mapYtDlpError(stderr));
+        const error = mapYtDlpError(stderr);
+        console.warn("yt-dlp download failed", {
+          jobId,
+          code,
+          errorCode: error.code,
+          stderr: sanitizeYtDlpStderr(stderr),
+        });
+        await failJob(jobId, error);
         return;
       }
 

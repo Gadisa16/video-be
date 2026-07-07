@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { env } from "../config/env.js";
 import type { DownloadFormat, VideoInfo } from "../types/video.js";
-import { AppError, mapYtDlpError } from "../utils/errors.js";
+import { AppError, mapYtDlpError, sanitizeYtDlpStderr } from "../utils/errors.js";
 import { detectPlatform } from "./domain.js";
 
 interface YtDlpFormat {
@@ -128,7 +128,13 @@ async function runYtDlpJson(args: string[]): Promise<string> {
       if (code === 0) {
         resolve(stdout);
       } else {
-        reject(mapYtDlpError(stderr));
+        const error = mapYtDlpError(stderr);
+        console.warn("yt-dlp metadata failed", {
+          code,
+          errorCode: error.code,
+          stderr: sanitizeYtDlpStderr(stderr),
+        });
+        reject(error);
       }
     });
   });

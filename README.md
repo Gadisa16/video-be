@@ -64,6 +64,14 @@ Production build:
 npm run build
 npm start
 ```
+## Deployment troubleshooting
+
+If the Vercel frontend shows that a public YouTube URL is private or restricted, check the backend first:
+
+- Confirm `GET /health` on the Render API returns `{ "status": "ok" }`. A Render free service can briefly return `502 Bad Gateway` while waking up.
+- Redeploy the backend image to install the latest `yt-dlp`; the Dockerfile installs `yt-dlp` during image build.
+- Check Render logs for `yt-dlp metadata failed` or `yt-dlp download failed`. `errorCode: "PLATFORM_BLOCKED"` means the source platform is blocking requests from the hosted server, often with a bot-check or rate-limit response.
+- Do not add user cookies, bypass private/login-protected media, or bypass DRM. For reliable access to your own content, use platform-approved APIs or a backend environment/IP that the platform allows.
 
 ## Endpoints
 
@@ -92,4 +100,3 @@ npm start
 - Guests are limited by completed downloads using `guest_id`, hashed IP, and hashed User-Agent.
 - Abuse thresholds are configurable through `ABUSE_*` environment variables.
 - Public, auth, and feedback endpoints are rate-limited.
-

@@ -8,6 +8,7 @@ export type ErrorCode =
   | "UNSUPPORTED_URL"
   | "PRIVATE_OR_RESTRICTED"
   | "DRM_PROTECTED"
+  | "PLATFORM_BLOCKED"
   | "UNAVAILABLE"
   | "TOO_LARGE"
   | "TOO_LONG"
@@ -53,6 +54,13 @@ export function asyncHandler<TReq extends Request = Request>(
 
 export function mapYtDlpError(stderr: string): AppError {
   const text = stderr.toLowerCase();
+  if (isPlatformBlockingRequest(text)) {
+    return new AppError(
+      "PLATFORM_BLOCKED",
+      "The source platform is blocking requests from this server right now. This often happens on hosted servers when the platform asks automated tools to confirm they are not a bot. Try again later or check the backend deployment.",
+      429,
+    );
+  }
   if (text.includes("drm") || text.includes("protected")) {
     return new AppError("DRM_PROTECTED", "This media appears to be DRM-protected or restricted and cannot be processed.", 422);
   }
@@ -72,4 +80,26 @@ export function mapYtDlpError(stderr: string): AppError {
     return new AppError("UNSUPPORTED_URL", "This URL is not supported by the downloader.", 422);
   }
   return new AppError("DOWNLOAD_FAILED", "The media could not be processed. Confirm it is public and you are authorized to download it.", 422);
+}
+
+export function sanitizeYtDlpStderr(stderr: string) {
+  return stderr
+    .replace(/https?:\/\/\S+/gi, "[url]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 1200);
+}
+
+function isPlatformBlockingRequest(text: string) {
+  return (
+    text.includes("not a bot") ||
+    text.includes("unusual traffic") ||
+    text.includes("too many requests") ||
+    text.includes("http error 429") ||
+    text.includes("429: too many requests") ||
+    text.includes("request blocked") ||
+    text.includes("blocked by") ||
+    (text.includes("sign in") && text.includes("bot")) ||
+    (text.includes("confirm") && text.includes("bot"))
+  );
 }
