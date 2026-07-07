@@ -33,6 +33,7 @@ export function createApp() {
     rateLimit({
       windowMs: 15 * 60 * 1000,
       limit: env.PUBLIC_RATE_LIMIT_PER_15_MIN,
+      skip: (req) => req.path === "/health",
       standardHeaders: true,
       legacyHeaders: false,
       message: {
