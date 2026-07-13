@@ -33,6 +33,12 @@ const envSchema = z.object({
   AUTH_RATE_LIMIT_PER_15_MIN: z.coerce.number().int().positive().default(20),
   FEEDBACK_RATE_LIMIT_PER_15_MIN: z.coerce.number().int().positive().default(10),
   PUBLIC_RATE_LIMIT_PER_15_MIN: z.coerce.number().int().positive().default(100),
+  // Supabase keep-alive: prevents free-tier projects from being auto-paused after 7d of inactivity.
+  KEEPALIVE_ENABLED: z.coerce.boolean().default(true),
+  KEEPALIVE_INTERVAL_HOURS: z.coerce.number().positive().default(24),
+  KEEPALIVE_INTERVAL_MINUTES: z.coerce.number().int().nonnegative().default(0),
+  KEEPALIVE_JITTER_MINUTES: z.coerce.number().int().nonnegative().default(15),
+  KEEPALIVE_RUN_ON_BOOT: z.coerce.boolean().default(true),
 });
 
 const parsed = envSchema.parse(process.env);

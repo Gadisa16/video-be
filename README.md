@@ -76,6 +76,7 @@ If the Vercel frontend shows that a public YouTube URL is private or restricted,
 ## Endpoints
 
 - `GET /health`
+- `GET /health/keepalive` — Supabase keep-alive scheduler status (see below)
 - `POST /api/auth/sync`
 - `PATCH /api/auth/profile`
 - `GET /api/me`
@@ -91,6 +92,32 @@ If the Vercel frontend shows that a public YouTube URL is private or restricted,
 - `GET /api/downloads/:jobId`
 - `POST /api/downloads/:jobId/cancel`
 - `GET /api/downloads/:jobId/file`
+
+## Supabase keep-alive (prevents auto-pause)
+
+Supabase pauses free-tier projects after ~7 days of inactivity. The backend runs an in-process scheduler (`src/jobs/keepAlive.ts`) that pings your Supabase project on a timer so it never goes idle. Each tick writes a synthetic row to `analytics_events`, which counts as real activity for Supabase's inactivity detector and gives you a heartbeat you can grep for in your dashboard.
+
+Defaults (see `.env.example` for the full list):
+
+| Variable                  | Default | Purpose                                                                |
+| ------------------------- | ------- | ---------------------------------------------------------------------- |
+| `KEEPALIVE_ENABLED`       | `true`  | Set to `false` to disable the scheduler entirely.                      |
+| `KEEPALIVE_INTERVAL_HOURS`| `24`    | Hours between pings. 24h is well inside the 7-day pause window.        |
+| `KEEPALIVE_INTERVAL_MINUTES` | `0`  | Extra minutes added to the interval (use `H=0 M=6` for a 6-minute loop).|
+| `KEEPALIVE_JITTER_MINUTES`| `15`    | Random ± window so multiple replicas don't ping at the same second.    |
+| `KEEPALIVE_RUN_ON_BOOT`   | `true`  | If `true`, the first tick fires immediately on startup/restart.        |
+
+Check status at any time:
+
+```bash
+curl https://your-api.onrender.com/health/keepalive
+```
+
+Notes:
+
+- The scheduler is a no-op if `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` is missing — safe to leave enabled in environments without Supabase.
+- It runs in the Render backend process. If your Render free service spins down, pings pause with it; consider an external uptime cron-job.org ping too if Render is also frequently idle.
+- The synthetic row is tagged `event_type = 'keepalive_ping'` so it's trivial to filter out of real analytics.
 
 ## Privacy and abuse controls
 

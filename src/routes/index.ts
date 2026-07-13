@@ -7,6 +7,7 @@ import { adminLogin, completeProfile, getMe, requireAdmin, syncAuthProfile } fro
 import { cancelDownload, createDownload, downloadFile, getDownload } from "../controllers/downloadController.js";
 import { deleteFeedback, listFeedback, submitFeedback, updateFeedback } from "../controllers/feedbackController.js";
 import { getVideoInfo } from "../controllers/videoController.js";
+import { getKeepAliveStatus } from "../jobs/keepAlive.js";
 
 export const router = Router();
 
@@ -18,10 +19,14 @@ router.get("/", (_req, res) => {
     status: "ok",
     service: "video-downloader-api",
     health: "/health",
+    keepalive: "/health/keepalive",
   });
 });
 router.get("/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+router.get("/health/keepalive", (_req, res) => {
+  res.json({ status: "ok", keepalive: getKeepAliveStatus() });
 });
 
 router.post("/api/auth/sync", authLimiter, syncAuthProfile);
